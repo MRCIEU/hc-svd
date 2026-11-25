@@ -66,6 +66,21 @@ Signs are fixed so that each component's largest entry in U is positive. Matrix 
 
 **Defaults:** oversampling = the larger of 50 and `--nhcs`; `--tol` 1e-12; at most 100 power iterations. With these, HCs agree with R's `sparsesvd` to within about 10⁻⁵ of each HC's standard deviation on painted 1000 Genomes data (20 and 150 HCs). In the flattest part of the spectrum, the remaining difference is mostly `sparsesvd`'s own convergence.
 
+## Testing
+
+```
+cargo test
+```
+
+- **Unit tests** cover the sparse products and the randomised SVD against an exact SVD.
+- **`tests/r_reference.rs`** checks agreement with the R step `hcsvd` replaces: `calculate_haplotype_components.R` (R `Matrix` + `sparsesvd`) in [pipeline-nf-haplotype-components](https://github.com/MRCIEU/pipeline-nf-haplotype-components).
+  - It uses painted 1000 Genomes data (`tests/data`: 904 samples, 20 HCs) and four sets of options: plain; relatives' pairs removed and reweighted; fit on a subset; and fit on the unrelated samples with relatives projected.
+  - HCs must agree up to sign (|correlation| ≥ 0.999999, largest difference ≤ 10⁻⁴ of each HC's SD), and the diagnostics must match.
+  - The R outputs are stored in `tests/data/r`; `tests/make_r_reference.sh <calculate_haplotype_components.R>` regenerates them (needs docker).
+- **`tests/cli.rs`** covers the binary and text matrix formats (same output), a sample with no entries, and errors on invalid input.
+
+CI (GitHub Actions) runs formatting, lints and the tests on pushes and pull requests to `main`.
+
 ## Licence
 
 MIT (see [LICENSE](LICENSE)).
