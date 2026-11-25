@@ -76,7 +76,7 @@ cargo test
 
 - **Unit tests** cover the sparse products and the randomised SVD against an exact SVD.
 - **`tests/r_reference.rs`** checks agreement with an R implementation of the same calculation (R `Matrix` + `sparsesvd`, with the same options).
-  - It uses painted 1000 Genomes data (`tests/data`: 904 samples, 20 HCs) and four sets of options: plain; relatives' pairs removed and reweighted; fit on a subset; and fit on the unrelated samples with relatives projected.
+  - It uses painted 1000 Genomes data (`tests/data`: 904 samples, 20 HCs; made by `testdata/make_hc_testdata.sh` in pipeline-nf-haplotype-components v0.1.0, at full HapMap 3 density with the production painting settings) and four sets of options: plain; relatives' pairs removed and reweighted; fit on a subset; and fit on the unrelated samples with relatives projected.
   - HCs must agree up to sign (|correlation| ≥ 0.999999, largest difference ≤ 10⁻⁴ of each HC's SD), and the diagnostics must match.
   - The R outputs are stored in `tests/data/r`; `tests/make_r_reference.sh <calculate_haplotype_components.R>` regenerates them (needs docker).
 - **`tests/hc_step.rs`** checks what the options do, on the same data:
