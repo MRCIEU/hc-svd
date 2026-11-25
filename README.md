@@ -1,0 +1,71 @@
+# hc-svd
+
+`hcsvd` computes **haplotype components (HCs)** from a combined chunk-length matrix: the output of [`combine`](https://github.com/MRCIEU/combine-pbwt-sparsepaint), which merges `pbwt -paintSparse` paintings across chromosomes.
+
+HCs are the top singular vectors of log10(matrix + 1), scaled by the square roots of their singular values: **HCs = U·√D**. That's the same definition as the R step in [pipeline-nf-haplotype-components](https://github.com/MRCIEU/pipeline-nf-haplotype-components) (`sparsesvd`), with the same options and outputs. `hcsvd` uses a parallel randomised SVD and 64-bit indexing, so it isn't limited to R's 2³¹ − 1 matrix entries and scales to biobank-sized matrices.
+
+## Build
+
+```
+cargo build --release
+./target/release/hcsvd --help
+```
+
+## Use
+
+```
+hcsvd --matrix combined.rows.bin --samples samples.txt --nhcs 150 --out HCs.csv \
+    [--sums combined.sums] [--diagnostics HC_diagnostics.tsv] \
+    [--remove_pairs pairs.txt] [--fit_samples unrelated.txt] [--project] [--reweight] [--threads N]
+```
+
+### Inputs
+
+- **`--matrix`:** `combine`'s matrix, in either format (detected automatically):
+  - the binary row stream from `combine --binary` (`<prefix>.rows.bin`), recommended for large matrices;
+  - the text `index1 index2 value` (1-based), gzipped or not (`<prefix>.txt.gz`).
+- **`--samples`:** sample IDs, one per line, in the order of the painted files. Matrix index *i* is line *i*.
+- **`--sums`:** `combine`'s row sums (`<prefix>.sums`, `index1 sum`), each row's total before `combine --restrict` dropped entries. Needed for `--reweight`; also used in the diagnostics.
+
+### Options
+
+| Option | |
+|---|---|
+| `--nhcs` | number of HCs |
+| `--remove_pairs FILE` | sample-ID pairs (e.g. relatives) whose entries are removed, in both directions. The first two whitespace-separated columns are used; pairs with an ID not in `--samples` (or a header line) are skipped. |
+| `--fit_samples FILE` | only these samples' rows and columns are used for the SVD, and only they get HCs, unless `--project` is given |
+| `--project` | with `--fit_samples`: the other samples get HCs too, by projecting their rows (entries to fitted samples only) onto the SVD: row × V·D^(−1/2) |
+| `--reweight` | rescale each row to its total in `--sums` after entries were removed (by `combine --restrict`, `--remove_pairs` or `--fit_samples`) |
+| `--diagnostics FILE` | per-sample diagnostics (below) |
+| `--threads` | threads (default: all) |
+| `--oversample`, `--power_iterations`, `--tol`, `--seed` | randomised SVD settings (below) |
+
+To fit HCs on unrelated individuals and give their relatives HCs by projection, use `--fit_samples`, `--project`, `--remove_pairs` and `--reweight` together (see the pipeline's README, "Handling relatives").
+
+### Outputs
+
+- **`--out`:** CSV with columns `sample, HC1, …, HCk`. One row per fitted (and, with `--project`, projected) sample, in `--samples` order. Fewer than `--nhcs` columns if the matrix has fewer non-zero singular values.
+- **`--diagnostics`:** tab-separated, one row per sample, with columns `sample, n_entries, total_precap, total_kept, frac_kept, largest_share, frac_removed, frac_outside, n_entries_used, reweight_factor, status` (`fitted`, `projected` or `not fitted`). Missing values are written `NA`.
+
+## Method
+
+The order of operations on each row is:
+1. remove listed pairs;
+2. keep entries to fitted samples;
+3. reweight;
+4. log10(x + 1).
+
+Rows are processed as the matrix is read, and stored in compressed sparse row form: 32-bit column indices and values, 64-bit row offsets, plus a transposed copy.
+
+**The SVD** is randomised (Halko, Martinsson & Tropp, *SIAM Review* 2011):
+1. multiply by a random block of `--nhcs` + `--oversample` columns;
+2. repeat power iterations (products with Aᵀ and A, re-orthonormalised by QR) until the top `--nhcs` singular-value estimates change by less than `--tol` (relative) between iterations, or `--power_iterations` is reached;
+3. take the SVD of the small projected matrix.
+
+Signs are fixed so that each component's largest entry in U is positive. Matrix products run in parallel (`rayon`); dense factorisations use [`faer`](https://github.com/sarah-quinones/faer-rs).
+
+**Defaults:** oversampling = the larger of 50 and `--nhcs`; `--tol` 1e-12; at most 100 power iterations. With these, HCs agree with R's `sparsesvd` to within about 10⁻⁵ of each HC's standard deviation on painted 1000 Genomes data (20 and 150 HCs). In the flattest part of the spectrum, the remaining difference is mostly `sparsesvd`'s own convergence.
+
+## Licence
+
+MIT (see [LICENSE](LICENSE)).

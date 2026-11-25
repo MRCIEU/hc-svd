@@ -68,9 +68,9 @@ struct Args {
     #[arg(long)]
     threads: Option<usize>,
 
-    /// Randomised SVD: extra random directions beyond --nhcs
-    #[arg(long, default_value_t = 50)]
-    oversample: usize,
+    /// Randomised SVD: extra random directions beyond --nhcs [default: the larger of 50 and --nhcs]. More means fewer power iterations; the cost per iteration grows with --nhcs + --oversample
+    #[arg(long)]
+    oversample: Option<usize>,
 
     /// Randomised SVD: maximum number of power iterations
     #[arg(
@@ -314,7 +314,7 @@ fn run(a: Args) -> Result<()> {
         &fit_t,
         a.nhcs,
         rsvd::Settings {
-            oversample: a.oversample,
+            oversample: a.oversample.unwrap_or(a.nhcs.max(50)),
             power_iterations: a.power_iterations,
             tol: a.tol,
             seed: a.seed,
