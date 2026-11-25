@@ -179,3 +179,24 @@ fn duplicate_sample_ids_fail() {
         ],
     );
 }
+
+#[test]
+fn licence_flags_print_the_notice() {
+    let notice = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("NOTICE")).unwrap();
+    let o = hcsvd(["--licences"]);
+    assert!(o.status.success());
+    assert_eq!(String::from_utf8(o.stdout).unwrap(), notice);
+    let o = hcsvd(["-l"]);
+    assert!(o.status.success());
+    let summary = String::from_utf8(o.stdout).unwrap();
+    assert!(summary.starts_with("hc-svd is licensed under the MIT License"));
+    assert!(summary.contains("hcsvd --licences"));
+    assert!(!summary.contains("---"));
+}
+
+#[test]
+fn the_main_arguments_are_required() {
+    let o = hcsvd(["--samples", "x", "--nhcs", "5", "--out", "y"]);
+    assert!(!o.status.success());
+    assert!(String::from_utf8_lossy(&o.stderr).contains("--matrix"));
+}

@@ -2,7 +2,9 @@
 
 `hcsvd` computes **haplotype components (HCs)** from a combined chunk-length matrix: the output of [`combine`](https://github.com/MRCIEU/combine-pbwt-sparsepaint), which merges `pbwt -paintSparse` paintings across chromosomes.
 
-HCs are the top singular vectors of log10(matrix + 1), scaled by the square roots of their singular values: **HCs = U·√D**. That's the same definition as the R step in [pipeline-nf-haplotype-components](https://github.com/MRCIEU/pipeline-nf-haplotype-components) (`sparsesvd`), with the same options and outputs. `hcsvd` uses a parallel randomised SVD and 64-bit indexing, so it isn't limited to R's 2³¹ − 1 matrix entries and scales to biobank-sized matrices.
+It is the HC step of [pipeline-nf-haplotype-components](https://github.com/MRCIEU/pipeline-nf-haplotype-components), which runs the whole calculation from phased VCFs.
+
+HCs are the top singular vectors of log10(matrix + 1), scaled by the square roots of their singular values: **HCs = U·√D**. That's the definition in [SparsePainter's HC pipeline](https://github.com/YaolingYang/SparsePainter/tree/main/painting-pipeline/Compute%20haplotype%20components%20(HCs)), whose SVD step is written in R (`Matrix` + `sparsesvd`). `hcsvd` gives the same HCs, adds options for relatives and sample subsets, and uses a parallel randomised SVD with 64-bit indexing, so it isn't limited to R's 2³¹ − 1 matrix entries and scales to biobank-sized matrices.
 
 ## Build
 
@@ -64,7 +66,7 @@ Rows are processed as the matrix is read, and stored in compressed sparse row fo
 
 Signs are fixed so that each component's largest entry in U is positive. Matrix products run in parallel (`rayon`); dense factorisations use [`faer`](https://github.com/sarah-quinones/faer-rs).
 
-**Defaults:** oversampling = the larger of 50 and `--nhcs`; `--tol` 1e-12; at most 100 power iterations. With these, HCs agree with R's `sparsesvd` to within about 10⁻⁵ of each HC's standard deviation on painted 1000 Genomes data (20 and 150 HCs). In the flattest part of the spectrum, the remaining difference is mostly `sparsesvd`'s own convergence.
+**Defaults:** oversampling = the larger of 50 and `--nhcs`; `--tol` 1e-12; at most 100 power iterations. With these, HCs agree with the R implementation (`sparsesvd`) to within about 10⁻⁵ of each HC's standard deviation on painted 1000 Genomes data (20 and 150 HCs). In the flattest part of the spectrum, the remaining difference is mostly `sparsesvd`'s own convergence.
 
 ## Testing
 
@@ -73,14 +75,16 @@ cargo test
 ```
 
 - **Unit tests** cover the sparse products and the randomised SVD against an exact SVD.
-- **`tests/r_reference.rs`** checks agreement with the R step `hcsvd` replaces: `calculate_haplotype_components.R` (R `Matrix` + `sparsesvd`) in [pipeline-nf-haplotype-components](https://github.com/MRCIEU/pipeline-nf-haplotype-components).
+- **`tests/r_reference.rs`** checks agreement with an R implementation of the same calculation (R `Matrix` + `sparsesvd`, with the same options).
   - It uses painted 1000 Genomes data (`tests/data`: 904 samples, 20 HCs) and four sets of options: plain; relatives' pairs removed and reweighted; fit on a subset; and fit on the unrelated samples with relatives projected.
   - HCs must agree up to sign (|correlation| ≥ 0.999999, largest difference ≤ 10⁻⁴ of each HC's SD), and the diagnostics must match.
   - The R outputs are stored in `tests/data/r`; `tests/make_r_reference.sh <calculate_haplotype_components.R>` regenerates them (needs docker).
-- **`tests/cli.rs`** covers the binary and text matrix formats (same output), a sample with no entries, and errors on invalid input.
+- **`tests/cli.rs`** covers the binary and text matrix formats (same output), a sample with no entries, the licence flags, and errors on invalid input.
 
 CI (GitHub Actions) runs formatting, lints and the tests on pushes and pull requests to `main`.
 
 ## Licence
 
-MIT (see [LICENSE](LICENSE)).
+MIT (see [LICENSE](LICENSE)). `hcsvd` also incorporates third-party Rust crates under permissive licences, whose notices are in [NOTICE](NOTICE). `hcsvd -l` prints a summary and `hcsvd --licences` the full text.
+
+After changing dependencies, regenerate NOTICE with [cargo-about](https://github.com/EmbarkStudios/cargo-about): `cargo about generate notice.hbs -o NOTICE`.

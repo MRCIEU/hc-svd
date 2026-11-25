@@ -21,23 +21,24 @@ use sparse::Csr;
 #[derive(Parser, Debug)]
 #[command(
     version,
-    about = "Haplotype components (HCs) from combine's chunk-length matrix"
+    about = "Haplotype components (HCs) from combine's chunk-length matrix",
+    override_usage = "hcsvd --matrix <MATRIX> --samples <SAMPLES> --nhcs <NHCS> --out <OUT> [OPTIONS]"
 )]
 struct Args {
     /// combine's matrix: <prefix>.rows.bin (combine --binary) or <prefix>.txt.gz ("index1 index2 value", 1-based)
-    #[arg(long)]
+    #[arg(long, required_unless_present_any = ["licences", "licences_summary"], hide_default_value = true, default_value = "")]
     matrix: String,
 
     /// Sample IDs, one per line, in the order of the painted BCF/VCFs
-    #[arg(long)]
+    #[arg(long, required_unless_present_any = ["licences", "licences_summary"], hide_default_value = true, default_value = "")]
     samples: String,
 
     /// Number of HCs to compute
-    #[arg(long)]
+    #[arg(long, required_unless_present_any = ["licences", "licences_summary"], hide_default_value = true, default_value_t = 0)]
     nhcs: usize,
 
     /// Output file for the HCs (CSV: sample, HC1, HC2, ...)
-    #[arg(long)]
+    #[arg(long, required_unless_present_any = ["licences", "licences_summary"], hide_default_value = true, default_value = "")]
     out: String,
 
     /// combine's row sums (<prefix>.sums: "index1 sum"), before combine --restrict dropped entries. Needed for --reweight; also used in the diagnostics
@@ -87,9 +88,27 @@ struct Args {
     /// Randomised SVD: random seed
     #[arg(long, default_value_t = 1)]
     seed: u64,
+
+    /// Print a summary of licence information
+    #[arg(short = 'l')]
+    licences_summary: bool,
+
+    /// Print full licence information, including all third-party notices
+    #[arg(long, alias = "licenses")]
+    licences: bool,
 }
 
-/// Per-sample bookkeeping, as in the R step's diagnostics.
+/// The NOTICE file: this program's licence, and the notices of its third-party dependencies
+const NOTICE: &str = include_str!("../NOTICE");
+
+/// The opening statement of NOTICE, i.e. everything before the first third-party notice
+fn get_notice_summary() -> &'static str {
+    NOTICE
+        .split_once("\n---")
+        .map_or(NOTICE, |(summary, _)| summary)
+}
+
+/// Per-sample bookkeeping, as in the R implementation's diagnostics.
 #[derive(Default, Clone)]
 struct Row {
     n_entries: usize,
@@ -113,6 +132,17 @@ fn main() {
 }
 
 fn run(a: Args) -> Result<()> {
+    if a.licences {
+        print!("{NOTICE}");
+        return Ok(());
+    }
+    if a.licences_summary {
+        println!("{}", get_notice_summary());
+        println!(
+            "Use \"hcsvd --licences\" to print the full text, including all third-party notices."
+        );
+        return Ok(());
+    }
     if a.reweight && a.sums.is_none() {
         bail!("--reweight needs --sums");
     }
@@ -418,4 +448,17 @@ fn write_diagnostics(path: &str, samples: &[String], rows: &[Row]) -> Result<()>
     }
     w.flush()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn notice_summary_stops_before_first_third_party_notice() {
+        let summary = get_notice_summary();
+        assert!(summary.starts_with("hc-svd is licensed under the MIT License"));
+        assert!(!summary.contains("---"));
+        assert!(summary.len() < NOTICE.len());
+    }
 }

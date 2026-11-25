@@ -1,4 +1,4 @@
-//! hcsvd against the R step it replaces (R Matrix + sparsesvd): on painted 1000 Genomes data (904
+//! hcsvd against an R implementation of the same calculation (R Matrix + sparsesvd): on painted 1000 Genomes data (904
 //! samples, 20 HCs), HCs must agree up to sign and diagnostics must match the reference outputs in
 //! tests/data/r, which tests/make_r_reference.sh makes. The case names and options must match that script's.
 

@@ -1,0 +1,43 @@
+hc-svd is licensed under the MIT License; see LICENSE.
+
+hc-svd also incorporates third-party Rust crates, and is linked against the
+Rust standard library, which are distributed under the following permissive
+open-source licences:
+
+{{#each overview}}
+  - {{{name}}}
+{{/each}}
+
+Their copyright and licence notices are reproduced in the hc-svd NOTICE file,
+as those licences require. (For the Rust standard library, which bundles
+further third-party code, the Rust project's own copyright file is referenced
+below.)
+{{#each licenses}}
+{{#unless (eq used_by.[0].crate.name "hc-svd")}}
+
+--------------------------------------------------------------------------------
+{{{name}}}, used by:
+{{#each used_by}}
+  {{crate.name}} {{crate.version}} ({{#if crate.repository}}{{crate.repository}}{{else}}https://crates.io/crates/{{crate.name}}{{/if}})
+{{/each}}
+--------------------------------------------------------------------------------
+
+{{{text}}}
+{{~/unless}}
+{{/each}}
+
+--------------------------------------------------------------------------------
+Statically linked runtime components
+--------------------------------------------------------------------------------
+
+The following is linked statically into the hcsvd binary.
+
+Rust standard library (https://github.com/rust-lang/rust), under the Apache-2.0
+OR MIT licences, used here under the MIT License (its text appears above):
+
+Copyright (c) The Rust Project Developers (see https://thanks.rust-lang.org)
+
+The standard library also contains code from a small number of third-party
+crates and files under other permissive licences. Its complete copyright
+information is published by the Rust project as COPYRIGHT-library.html, which
+is distributed with every Rust toolchain (under share/doc/rust/).
