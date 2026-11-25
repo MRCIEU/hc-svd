@@ -79,6 +79,12 @@ cargo test
   - It uses painted 1000 Genomes data (`tests/data`: 904 samples, 20 HCs) and four sets of options: plain; relatives' pairs removed and reweighted; fit on a subset; and fit on the unrelated samples with relatives projected.
   - HCs must agree up to sign (|correlation| ≥ 0.999999, largest difference ≤ 10⁻⁴ of each HC's SD), and the diagnostics must match.
   - The R outputs are stored in `tests/data/r`; `tests/make_r_reference.sh <calculate_haplotype_components.R>` regenerates them (needs docker).
+- **`tests/hc_step.rs`** checks what the options do, on the same data:
+  - HCs separate the superpopulations, and relatives' HCs are shrunk without any handling;
+  - `--remove_pairs` with `--reweight` restores them, and `--reweight` alone changes nothing;
+  - `--fit_samples` with a group, or every sample;
+  - projecting relatives onto the unrelated: they keep their size and land nearest their own superpopulation;
+  - an exact check of the projection formula, using a projected copy of a fitted sample.
 - **`tests/cli.rs`** covers the binary and text matrix formats (same output), a sample with no entries, the licence flags, and errors on invalid input.
 
 CI (GitHub Actions) runs formatting, lints and the tests on pushes and pull requests to `main`.
