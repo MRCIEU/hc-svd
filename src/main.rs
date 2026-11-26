@@ -4,9 +4,11 @@
 //! values (U * sqrt(D)). Optionally: entries between listed pairs of samples (e.g. relatives) are
 //! removed, the SVD uses only some samples (`--fit_samples`), the others are projected onto it
 //! (`--project`: row * V * D^(-1/2)), and rows are rescaled to their totals before entries were
-//! removed (`--reweight`). The SVD is randomised (see rsvd.rs).
+//! removed (`--reweight`). The SVD is by restarted Lanczos bidiagonalization (lanczos.rs) or randomised
+//! (rsvd.rs).
 
 mod input;
+mod lanczos;
 mod rsvd;
 mod sparse;
 
@@ -17,6 +19,15 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 
 use sparse::Csr;
+
+/// How the truncated SVD is computed.
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq)]
+enum Method {
+    /// Restarted Lanczos bidiagonalization (IRLBA): few products with the matrix, each with one vector
+    Lanczos,
+    /// Randomised SVD with block power iterations: more products, each with a block of vectors
+    Randomised,
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -69,6 +80,18 @@ struct Args {
     #[arg(long)]
     threads: Option<usize>,
 
+    /// SVD method
+    #[arg(long, value_enum, default_value_t = Method::Lanczos)]
+    method: Method,
+
+    /// Lanczos: size of the Lanczos basis [default: --nhcs + the larger of 20 and --nhcs / 2]. Larger means fewer restarts and more memory (two dense matrices of samples x --work)
+    #[arg(long)]
+    work: Option<usize>,
+
+    /// Lanczos: maximum number of restarts
+    #[arg(long = "max_restarts", alias = "max-restarts", default_value_t = 1000)]
+    max_restarts: usize,
+
     /// Randomised SVD: extra random directions beyond --nhcs [default: the larger of 50 and --nhcs]. More means fewer power iterations; the cost per iteration grows with --nhcs + --oversample
     #[arg(long)]
     oversample: Option<usize>,
@@ -81,11 +104,11 @@ struct Args {
     )]
     power_iterations: usize,
 
-    /// Randomised SVD: stop the power iterations once the top --nhcs singular values change by less than this (relative) between iterations; 0 = always run --power_iterations
-    #[arg(long, default_value_t = 1e-12)]
-    tol: f64,
+    /// Convergence tolerance. Lanczos: stop when every one of the top --nhcs residuals is below this times the largest singular value [default 1e-10]. Randomised: stop the power iterations once the top --nhcs singular values change by less than this (relative) between iterations; 0 = always run --power_iterations [default 1e-12]
+    #[arg(long)]
+    tol: Option<f64>,
 
-    /// Randomised SVD: random seed
+    /// Random seed (the starting vector or block)
     #[arg(long, default_value_t = 1)]
     seed: u64,
 
@@ -339,20 +362,36 @@ fn run(a: Args) -> Result<()> {
         a.nhcs
     );
     let fit_t = fit_m.transpose();
-    let svd = rsvd::randomised_svd(
-        &fit_m,
-        &fit_t,
-        a.nhcs,
-        rsvd::Settings {
-            oversample: a.oversample.unwrap_or(a.nhcs.max(50)),
-            power_iterations: a.power_iterations,
-            tol: a.tol,
-            seed: a.seed,
-        },
-    )?;
+    let svd = match a.method {
+        Method::Lanczos => lanczos::lanczos_svd(
+            &fit_m,
+            &fit_t,
+            a.nhcs,
+            lanczos::Settings {
+                work: a.work.unwrap_or(a.nhcs + (a.nhcs / 2).max(20)),
+                tol: a.tol.unwrap_or(1e-10),
+                max_restarts: a.max_restarts,
+                seed: a.seed,
+            },
+        )?,
+        Method::Randomised => rsvd::randomised_svd(
+            &fit_m,
+            &fit_t,
+            a.nhcs,
+            rsvd::Settings {
+                oversample: a.oversample.unwrap_or(a.nhcs.max(50)),
+                power_iterations: a.power_iterations,
+                tol: a.tol.unwrap_or(1e-12),
+                seed: a.seed,
+            },
+        )?,
+    };
     drop(fit_t);
     let k = svd.k;
-    eprintln!("  {} power iterations", svd.iterations);
+    match a.method {
+        Method::Lanczos => eprintln!("  Lanczos: {} restarts", svd.iterations),
+        Method::Randomised => eprintln!("  {} power iterations", svd.iterations),
+    }
     if k < a.nhcs {
         eprintln!("  Warning: only {k} non-zero singular values; writing {k} HCs");
     }

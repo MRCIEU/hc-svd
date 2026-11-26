@@ -30,13 +30,13 @@ pub struct Settings {
 }
 
 /// A small, fast, reproducible generator of standard normal numbers (SplitMix64 + Box-Muller).
-struct Normal {
+pub(crate) struct Normal {
     state: u64,
     spare: Option<f64>,
 }
 
 impl Normal {
-    fn new(seed: u64) -> Self {
+    pub(crate) fn new(seed: u64) -> Self {
         Normal {
             state: seed,
             spare: None,
@@ -56,7 +56,7 @@ impl Normal {
         ((self.next_u64() >> 11) as f64 + 0.5) / (1u64 << 53) as f64
     }
 
-    fn sample(&mut self) -> f64 {
+    pub(crate) fn sample(&mut self) -> f64 {
         if let Some(s) = self.spare.take() {
             return s;
         }

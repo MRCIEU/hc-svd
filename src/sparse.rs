@@ -87,6 +87,23 @@ impl Csr {
         });
         y
     }
+
+    /// y = self * x for a single vector x (length ncols), in parallel over chunks of rows.
+    pub fn mul_vec(&self, x: &[f64]) -> Vec<f64> {
+        assert_eq!(x.len(), self.ncols);
+        let mut y = vec![0f64; self.nrows];
+        y.par_iter_mut()
+            .with_min_len(256)
+            .enumerate()
+            .for_each(|(r, yr)| {
+                let mut acc = 0f64;
+                for k in self.indptr[r] as usize..self.indptr[r + 1] as usize {
+                    acc += self.data[k] as f64 * x[self.indices[k] as usize];
+                }
+                *yr = acc;
+            });
+        y
+    }
 }
 
 #[cfg(test)]
@@ -102,6 +119,13 @@ mod tests {
         a.push_row(&[], &[]);
         a.push_row(&[0, 1], &[3.0, 4.0]);
         a
+    }
+
+    #[test]
+    fn mul_vec_matches_mul_dense() {
+        let a = example();
+        let x = [0.5, -1.0, 2.0];
+        assert_eq!(a.mul_vec(&x), a.mul_dense(&x, 1));
     }
 
     #[test]

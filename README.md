@@ -4,7 +4,7 @@
 
 It is the HC step of [pipeline-nf-haplotype-components](https://github.com/MRCIEU/pipeline-nf-haplotype-components), which runs the whole calculation from phased VCFs.
 
-HCs are the top singular vectors of log10(matrix + 1), scaled by the square roots of their singular values: **HCs = U·√D**. That's the definition in [SparsePainter's HC pipeline](https://github.com/YaolingYang/SparsePainter/tree/main/painting-pipeline/Compute%20haplotype%20components%20(HCs)), whose SVD step is written in R (`Matrix` + `sparsesvd`). `hcsvd` gives the same HCs, adds options for relatives and sample subsets, and uses a parallel randomised SVD with 64-bit indexing, so it isn't limited to R's 2³¹ − 1 matrix entries and scales to biobank-sized matrices.
+HCs are the top singular vectors of log10(matrix + 1), scaled by the square roots of their singular values: **HCs = U·√D**. That's the definition in [SparsePainter's HC pipeline](https://github.com/YaolingYang/SparsePainter/tree/main/painting-pipeline/Compute%20haplotype%20components%20(HCs)), whose SVD step is written in R (`Matrix` + `sparsesvd`). `hcsvd` gives the same HCs, adds options for relatives and sample subsets, and uses a parallel truncated SVD (restarted Lanczos, or randomised) with 64-bit indexing, so it isn't limited to R's 2³¹ − 1 matrix entries and scales to biobank-sized matrices.
 
 ## Build
 
@@ -40,7 +40,10 @@ hcsvd --matrix combined.rows.bin --samples samples.txt --nhcs 150 --out HCs.csv 
 | `--reweight` | rescale each row to its total in `--sums` after entries were removed (by `combine --restrict`, `--remove_pairs` or `--fit_samples`) |
 | `--diagnostics FILE` | per-sample diagnostics (below) |
 | `--threads` | threads (default: all) |
-| `--oversample`, `--power_iterations`, `--tol`, `--seed` | randomised SVD settings (below) |
+| `--method` | `lanczos` or `randomised` (below) |
+| `--work`, `--max_restarts` | Lanczos settings (below) |
+| `--oversample`, `--power_iterations` | randomised SVD settings (below) |
+| `--tol`, `--seed` | convergence tolerance and random seed, for either method (below) |
 
 To fit HCs on unrelated individuals and give their relatives HCs by projection, use `--fit_samples`, `--project`, `--remove_pairs` and `--reweight` together (see the pipeline's README, "Handling relatives").
 
@@ -59,14 +62,27 @@ The order of operations on each row is:
 
 Rows are processed as the matrix is read, and stored in compressed sparse row form: 32-bit column indices and values, 64-bit row offsets, plus a transposed copy.
 
-**The SVD** is randomised (Halko, Martinsson & Tropp, *SIAM Review* 2011):
-1. multiply by a random block of `--nhcs` + `--oversample` columns;
-2. repeat power iterations (products with Aᵀ and A, re-orthonormalised by QR) until the top `--nhcs` singular-value estimates change by less than `--tol` (relative) between iterations, or `--power_iterations` is reached;
-3. take the SVD of the small projected matrix.
+**The SVD.** Two methods, selected with `--method`: Lanczos (the default since v0.3.0) or randomised. They give the same HCs, but differ in how much arithmetic they do and how it parallelises. Lanczos was 2–6 times faster in every test (synthetic matrices of 25k–100k samples; the real 1000G painting at 150 HCs: 0.8 s vs 3.5 s), and closer to R.
+
+**Lanczos (`--method lanczos`):** the augmented implicitly restarted Lanczos bidiagonalization (IRLBA; Baglama & Reichel, *SIAM J. Sci. Comput.* 2005), the method of R's `irlba` package.
+1. Build a Lanczos bidiagonalization of A up to `--work` columns. Each step is one product with A and one with Aᵀ, each with a single vector. Both bases are fully reorthogonalised.
+2. Take the SVD of the small bidiagonal matrix. Stop when every one of the top `--nhcs` residuals is below `--tol` times the largest singular value.
+3. Otherwise restart from the top `--nhcs` approximations and the residual direction, and extend again.
+
+It needs few products with the matrix, like `sparsesvd`'s Lanczos, but they run in parallel over rows.
+
+**Randomised (`--method randomised`):** Halko, Martinsson & Tropp, *SIAM Review* 2011.
+1. Multiply by a random block of `--nhcs` + `--oversample` columns.
+2. Repeat power iterations (products with Aᵀ and A, re-orthonormalised by QR) until the top `--nhcs` singular-value estimates change by less than `--tol` (relative) between iterations, or `--power_iterations` is reached.
+3. Take the SVD of the small projected matrix.
+
+Each product is with a whole block of vectors, so it does much more arithmetic than Lanczos but uses memory efficiently.
 
 Signs are fixed so that each component's largest entry in U is positive. Matrix products run in parallel (`rayon`); dense factorisations use [`faer`](https://github.com/sarah-quinones/faer-rs).
 
-**Defaults:** oversampling = the larger of 50 and `--nhcs`; `--tol` 1e-12; at most 100 power iterations. With these, HCs agree with the R implementation (`sparsesvd`) to within about 10⁻⁵ of each HC's standard deviation on painted 1000 Genomes data (20 and 150 HCs). In the flattest part of the spectrum, the remaining difference is mostly `sparsesvd`'s own convergence.
+**Defaults and accuracy** (painted 1000 Genomes data):
+- **Lanczos:** `--work` = `--nhcs` + the larger of 20 and `--nhcs` / 2; `--tol` 1e-10; at most 1000 restarts. HCs agree with the R implementation (`sparsesvd`) to within about 2 × 10⁻⁶ of each HC's standard deviation at 20 HCs: the floor set by the matrix's 32-bit values.
+- **Randomised:** oversampling = the larger of 50 and `--nhcs`; `--tol` 1e-12; at most 100 power iterations. HCs agree with `sparsesvd` to within about 10⁻⁵ of each HC's SD (20 and 150 HCs). In the flattest part of the spectrum, the remaining difference is mostly `sparsesvd`'s own convergence.
 
 ## Testing
 
@@ -74,8 +90,8 @@ Signs are fixed so that each component's largest entry in U is positive. Matrix 
 cargo test
 ```
 
-- **Unit tests** cover the sparse products and the randomised SVD against an exact SVD.
-- **`tests/r_reference.rs`** checks agreement with an R implementation of the same calculation (R `Matrix` + `sparsesvd`, with the same options).
+- **Unit tests** cover the sparse products, and both SVD methods against an exact SVD (for Lanczos, including many restarts and a rank-deficient matrix).
+- **`tests/r_reference.rs`** checks agreement, for each SVD method, with an R implementation of the same calculation (R `Matrix` + `sparsesvd`, with the same options).
   - It uses painted 1000 Genomes data (`tests/data`: 904 samples, 20 HCs; made by `testdata/make_hc_testdata.sh` in pipeline-nf-haplotype-components v0.1.0, at full HapMap 3 density with the production painting settings) and four sets of options: plain; relatives' pairs removed and reweighted; fit on a subset; and fit on the unrelated samples with relatives projected.
   - HCs must agree up to sign (|correlation| ≥ 0.999999, largest difference ≤ 10⁻⁴ of each HC's SD), and the diagnostics must match.
   - The R outputs are stored in `tests/data/r`; `tests/make_r_reference.sh <calculate_haplotype_components.R>` regenerates them (needs docker).

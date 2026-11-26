@@ -446,7 +446,7 @@ fn projecting_relatives_onto_the_unrelated() {
 /// A test of the projection formula: a "clone" sample whose row is a copy of a fitted sample's row,
 /// and which no fitted sample has an entry to, must be projected to that sample's fitted HCs, without
 /// changing anyone else's. Fitted HCs (U·√d) and projected ones (row·V/√d) agree only as closely as
-/// the randomised SVD has converged (about 1e-8 here), so the tolerance is 1e-6; a wrong formula
+/// the SVD has converged (about 1e-8 here with the randomised method), so the tolerance is 1e-6; a wrong formula
 /// (e.g. a missing √d) gives differences of order 1.
 #[test]
 fn a_projected_copy_of_a_fitted_row_gets_its_hcs() {
