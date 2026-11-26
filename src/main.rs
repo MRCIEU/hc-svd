@@ -361,6 +361,7 @@ fn run(a: Args) -> Result<()> {
         fit_m.nnz(),
         a.nhcs
     );
+    let t_svd = std::time::Instant::now();
     let fit_t = fit_m.transpose();
     let svd = match a.method {
         Method::Lanczos => lanczos::lanczos_svd(
@@ -392,6 +393,7 @@ fn run(a: Args) -> Result<()> {
         Method::Lanczos => eprintln!("  Lanczos: {} restarts", svd.iterations),
         Method::Randomised => eprintln!("  {} power iterations", svd.iterations),
     }
+    eprintln!("  SVD time: {:.2} s", t_svd.elapsed().as_secs_f64());
     if k < a.nhcs {
         eprintln!("  Warning: only {k} non-zero singular values; writing {k} HCs");
     }
